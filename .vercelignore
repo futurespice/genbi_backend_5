@@ -1,0 +1,15 @@
+.venv
+venv
+__pycache__
+*.pyc
+.env
+.env.*
+.DS_Store
+.git
+.idea
+.vscode
+tests/
+alembic/
+*.log
+docker-compose.yml
+Dockerfile

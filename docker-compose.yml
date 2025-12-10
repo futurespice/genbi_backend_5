@@ -1,0 +1,23 @@
+version: '3.8'
+
+services:
+  db:
+    image: postgres:15-alpine
+    container_name: genbi-db-dev
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: genbi_user
+      POSTGRES_PASSWORD: 12345678
+      POSTGRES_DB: genbi_db
+    ports:
+      - "5433:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U genbi_user"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+volumes:
+  postgres_data:
