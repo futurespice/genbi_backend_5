@@ -7,7 +7,7 @@ class Settings(BaseSettings):
     API_V1_STR: str = "/api/v1"
 
     # Environment
-    ENVIRONMENT: str = "development"  # development, staging, production
+    ENVIRONMENT: str = "development"
 
     # БД
     POSTGRES_USER: str = "genbi_user"
@@ -16,51 +16,65 @@ class Settings(BaseSettings):
     POSTGRES_DB: str = "genbi_db"
     POSTGRES_PORT: str = "5433"
 
-    # Опциональная строка подключения (для Neon или других облачных БД)
     CONNECTION_STRING: Optional[str] = None
 
     @property
     def DATABASE_URL(self) -> str:
-        # Если есть CONNECTION_STRING, используем её
         if self.CONNECTION_STRING:
-            # Заменяем postgresql:// на postgresql+asyncpg://
             url = self.CONNECTION_STRING.replace("postgresql://", "postgresql+asyncpg://")
-            # Убираем sslmode и channel_binding (asyncpg их не понимает)
             url = url.replace("?sslmode=require", "?ssl=require")
             url = url.replace("&channel_binding=require", "")
             url = url.replace("&sslmode=require", "")
             return url
-        # Иначе собираем из отдельных параметров
         return f"postgresql+asyncpg://{self.POSTGRES_USER}:{self.POSTGRES_PASSWORD}@{self.POSTGRES_SERVER}:{self.POSTGRES_PORT}/{self.POSTGRES_DB}"
 
     # Безопасность
     SECRET_KEY: str = "dev-secret-key-CHANGE-IN-PRODUCTION"
     ALGORITHM: str = "HS256"
-    ACCESS_TOKEN_EXPIRE_MINUTES: int = 60 * 24 * 8  # 8 дней
-    REFRESH_TOKEN_EXPIRE_MINUTES: int = 60 * 24 * 30  # 30 дней
+    ACCESS_TOKEN_EXPIRE_MINUTES: int = 60 * 24 * 8
+    REFRESH_TOKEN_EXPIRE_MINUTES: int = 60 * 24 * 30
 
-    # CORS - ВАЖНО для production!
+    # ==========================================
+    # 🟢 ОБНОВЛЕНО: CORS (Кто может делать запросы к нам)
+    # ==========================================
     @property
     def CORS_ORIGINS(self) -> List[str]:
+        # Базовые адреса, разрешенные везде (например, ваш Vercel фронтенд)
+        origins = [
+            "https://genbi-backend-5.vercel.app",
+        ]
+
         if self.ENVIRONMENT == "production":
-            # В production ОБЯЗАТЕЛЬНО указать реальные домены!
-            return [
+            origins.extend([
                 "https://yourdomain.com",
                 "https://admin.yourdomain.com",
-            ]
+            ])
         elif self.ENVIRONMENT == "staging":
-            return [
+            origins.extend([
                 "https://staging.yourdomain.com",
-            ]
+            ])
         else:
-            # Development - локальные адреса
-            return [
+            # Development
+            origins.extend([
                 "http://localhost:3000",
                 "http://localhost:5173",
                 "http://localhost:8080",
                 "http://127.0.0.1:3000",
                 "http://127.0.0.1:5173",
-            ]
+            ])
+        return origins
+
+    # ==========================================
+    # 🟢 ДОБАВЛЕНО: Allowed Hosts (На каком домене работает бэкенд)
+    # ==========================================
+    @property
+    def ALLOWED_HOSTS(self) -> List[str]:
+        return [
+            "localhost",
+            "127.0.0.1",
+            "genbi-backend-5.vercel.app",  # Ваш Vercel домен (без https://)
+            "*.vercel.app" # Можно разрешить все поддомены vercel, если нужно
+        ]
 
     # Логирование
     LOG_LEVEL: str = "INFO"
@@ -83,7 +97,7 @@ class Settings(BaseSettings):
 
     class Config:
         env_file = ".env"
-        extra = "ignore"  # Игнорируем лишние поля из .env
+        extra = "ignore"
 
 
 settings = Settings()

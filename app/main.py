@@ -2,6 +2,7 @@ from fastapi import FastAPI, Request, status
 from fastapi.responses import JSONResponse
 from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.middleware.trustedhost import TrustedHostMiddleware  # 🟢 Импорт Middleware для хостов
 from sqlalchemy.exc import SQLAlchemyError
 
 from app.core.config import settings
@@ -21,6 +22,14 @@ app = FastAPI(
 )
 
 # ============================================
+# 🟢 ALLOWED HOSTS MIDDLEWARE (Добавляем первым или перед CORS)
+# ============================================
+app.add_middleware(
+    TrustedHostMiddleware,
+    allowed_hosts=settings.ALLOWED_HOSTS
+)
+
+# ============================================
 # RATE LIMITING
 # ============================================
 
@@ -29,6 +38,7 @@ app.state.limiter = limiter
 
 # Middleware для логирования rate limit нарушений
 app.add_middleware(RateLimitMiddleware)
+
 
 # Exception handler для rate limit
 @app.exception_handler(429)
@@ -47,12 +57,14 @@ async def rate_limit_handler(request: Request, exc):
 # ============================================
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=settings.CORS_ORIGINS,  # ✅ Теперь зависит от ENVIRONMENT
+    allow_origins=settings.CORS_ORIGINS,  # Использует обновленный список из конфига
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
+
+# ... (Остальной код без изменений: ERROR HANDLERS, MIDDLEWARE LOGGING и т.д.) ...
 
 # ============================================
 # ERROR HANDLERS
@@ -68,7 +80,7 @@ async def validation_exception_handler(request: Request, exc: RequestValidationE
             "msg": str(error.get("msg", "")),
             "type": error.get("type", "")
         })
-    
+
     logger.error(f"Validation error on {request.url.path}: {errors}")
     return JSONResponse(
         status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
@@ -110,15 +122,9 @@ async def general_exception_handler(request: Request, exc: Exception):
 @app.middleware("http")
 async def log_requests(request: Request, call_next):
     """Логирование всех запросов и ответов"""
-    # Запрос
     logger.info(f"➡️  {request.method} {request.url.path}")
-    
-    # Обработка
     response = await call_next(request)
-    
-    # Ответ
     logger.info(f"⬅️  {request.method} {request.url.path} - Status: {response.status_code}")
-    
     return response
 
 
@@ -128,18 +134,17 @@ async def log_requests(request: Request, call_next):
 
 @app.on_event("startup")
 async def startup_event():
-    """События при запуске приложения"""
     logger.info("=" * 50)
     logger.info(f"🚀 Starting {settings.PROJECT_NAME}")
     logger.info(f"📚 Documentation: http://localhost:8000{settings.API_V1_STR}/docs")
     logger.info(f"🌍 Environment: {settings.ENVIRONMENT}")
     logger.info(f"🔒 CORS Origins: {settings.CORS_ORIGINS}")
+    logger.info(f"🏠 Allowed Hosts: {settings.ALLOWED_HOSTS}")  # Можно добавить в лог для проверки
     logger.info("=" * 50)
 
 
 @app.on_event("shutdown")
 async def shutdown_event():
-    """События при остановке приложения"""
     logger.info("=" * 50)
     logger.info(f"🛑 Shutting down {settings.PROJECT_NAME}")
     logger.info("=" * 50)
@@ -149,14 +154,11 @@ async def shutdown_event():
 # ROUTES
 # ============================================
 
-# API routes
 app.include_router(api_router, prefix=settings.API_V1_STR)
 
 
-# Root endpoint
 @app.get("/", tags=["Root"])
 async def root():
-    """Корневой эндпоинт"""
     return {
         "message": f"Welcome to {settings.PROJECT_NAME}",
         "docs": f"{settings.API_V1_STR}/docs",
@@ -164,10 +166,8 @@ async def root():
     }
 
 
-# Health check
 @app.get("/health", tags=["Health"])
 async def health_check():
-    """Проверка здоровья сервиса"""
     return {
         "status": "healthy",
         "service": settings.PROJECT_NAME,
