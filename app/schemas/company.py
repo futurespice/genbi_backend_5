@@ -1,4 +1,8 @@
 from pydantic import BaseModel
+from typing import List, TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from app.schemas.tour import TourResponse
 
 
 class CompanyBase(BaseModel):
@@ -25,3 +29,26 @@ class CompanyResponse(CompanyBase):
 
     class Config:
         from_attributes = True
+
+
+# ✅ НОВОЕ: Компания с турами для аккордиона
+class CompanyWithToursResponse(CompanyResponse):
+    """
+    Компания с турами для аккордиона
+
+    При GET /companies можно запросить с параметром ?include_tours=true
+    Тогда будет возвращаться список туров компании
+
+    Использование на фронтенде:
+    - При загрузке списка компаний получаем только базовую информацию
+    - При клике на компанию (раскрытие аккордиона) подгружаем туры
+    - Или сразу загружаем все с include_tours=true
+    """
+    tours: List['TourResponse'] = []
+    tours_count: int = 0  # Количество туров для badge
+
+
+# Для избежания circular imports
+from app.schemas.tour import TourResponse
+
+CompanyWithToursResponse.model_rebuild()

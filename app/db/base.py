@@ -7,6 +7,7 @@ from app.models.user import User
 
 # 2. Модели, зависящие от User
 from app.models.company import Company
+from app.models.company_application import CompanyApplication
 
 # 3. Модели, зависящие от Company
 from app.models.tour import Tour
@@ -16,4 +17,4 @@ from app.models.booking import Booking
 from app.models.review import Review
 
 # Экспортируем для удобства
-__all__ = ["Base", "User", "Company", "Tour", "Booking", "Review"]
+__all__ = ["Base", "User", "Company", "CompanyApplication", "Tour", "Booking", "Review"]

@@ -14,3 +14,8 @@ class BookingStatus(str, enum.Enum):
 class ReviewTargetType(str, enum.Enum):
     TOUR = "tour"
     COMPANY = "company"
+
+class ApplicationStatus(str, enum.Enum):
+    PENDING = "pending"
+    APPROVED = "approved"
+    REJECTED = "rejected"
