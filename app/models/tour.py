@@ -2,6 +2,7 @@ from sqlalchemy import Column, Integer, String, Float, ForeignKey, Text, JSON, B
 from sqlalchemy.orm import relationship
 from app.db.base_class import Base
 
+
 class Tour(Base):
     __tablename__ = "tours"
     id = Column(Integer, primary_key=True, index=True)
@@ -13,8 +14,13 @@ class Tour(Base):
     location = Column(String, index=True)
     duration = Column(String)
     rating = Column(Float, default=0.0)
-    capacity = Column(Integer, default=50, nullable=False)  # ✅ ДОБАВЛЕНО
-    is_active = Column(Boolean, default=True)  # ✅ ДОБАВЛЕНО для soft delete
+    capacity = Column(Integer, default=50, nullable=False)
+    is_active = Column(Boolean, default=True)
+
+    # ✅ НОВОЕ: Координаты для карты
+    latitude = Column(Float, nullable=True)  # Широта (например, 42.8746)
+    longitude = Column(Float, nullable=True)  # Долгота (например, 74.5698)
+
     company_id = Column(Integer, ForeignKey("companies.id"))
 
     company = relationship("Company", back_populates="tours")

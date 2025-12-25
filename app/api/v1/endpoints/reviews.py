@@ -38,8 +38,9 @@ async def create_review(
             detail="Рейтинг должен быть от 1 до 5"
         )
 
-    # Валидация target_id
+    # Валидация target_id и проверка дубликата
     if review_in.target_type == 'tour':
+        # Проверка существования тура
         res = await db.execute(select(Tour).filter(Tour.id == review_in.target_id))
         tour = res.scalars().first()
         if not tour:
@@ -74,6 +75,7 @@ async def create_review(
         )
 
     elif review_in.target_type == 'company':
+        # Проверка существования компании
         res = await db.execute(select(Company).filter(Company.id == review_in.target_id))
         company = res.scalars().first()
         if not company:
@@ -106,6 +108,11 @@ async def create_review(
             rating=review_in.rating,
             comment=review_in.comment
         )
+    else:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="target_type должен быть 'tour' или 'company'"
+        )
 
     db.add(review)
     await db.commit()
@@ -121,7 +128,7 @@ async def create_review(
 async def get_reviews(
         page: int = Query(1, ge=1),
         per_page: int = Query(20, ge=1, le=100),
-        target_type: str | None = Query(None, description="Фильтр по типу"),
+        target_type: str | None = Query(None, description="Фильтр по типу (tour/company)"),
         target_id: int | None = Query(None, description="ID объекта"),
         is_moderated: bool | None = Query(None, description="Фильтр по модерации"),
         db: AsyncSession = Depends(get_db)
@@ -146,7 +153,7 @@ async def get_reviews(
         query = query.filter(Review.target_type == target_type)
         count_query = count_query.filter(Review.target_type == target_type)
 
-    if target_id:
+    if target_id is not None:
         if target_type == 'tour':
             query = query.filter(Review.tour_id == target_id)
             count_query = count_query.filter(Review.tour_id == target_id)
@@ -257,7 +264,8 @@ async def delete_review(
     await db.commit()
 
     # Пересчитываем рейтинг после удаления
-    await _update_rating(db, target_type, target_id)
+    if target_id:
+        await _update_rating(db, target_type, target_id)
 
 
 async def _update_rating(db: AsyncSession, target_type: str, target_id: int):
