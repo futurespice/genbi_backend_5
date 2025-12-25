@@ -35,45 +35,65 @@ class Settings(BaseSettings):
     REFRESH_TOKEN_EXPIRE_MINUTES: int = 60 * 24 * 30
 
     # ==========================================
-    # 🟢 ОБНОВЛЕНО: CORS (Кто может делать запросы к нам)
+    # 🔥 ИСПРАВЛЕННЫЙ CORS
     # ==========================================
     @property
     def CORS_ORIGINS(self) -> List[str]:
-        # Базовые адреса, разрешенные везде (например, ваш Vercel фронтенд)
-        origins = [
-            "https://genbi-backend-5.vercel.app",
-        ]
+        """
+        Возвращает список разрешенных origins для CORS
+        """
+        origins = []
 
         if self.ENVIRONMENT == "production":
-            origins.extend([
+            # Production - только конкретные домены
+            origins = [
+                "https://genbi-backend-5.vercel.app",
                 "https://yourdomain.com",
                 "https://admin.yourdomain.com",
-            ])
+                "https://www.yourdomain.com",
+            ]
         elif self.ENVIRONMENT == "staging":
-            origins.extend([
+            # Staging
+            origins = [
                 "https://staging.yourdomain.com",
-            ])
+                "https://genbi-staging.vercel.app",
+            ]
         else:
-            # Development
-            origins.extend([
+            # Development - разрешаем localhost и 127.0.0.1
+            origins = [
                 "http://localhost:3000",
+                "http://localhost:3001",
                 "http://localhost:5173",
+                "http://localhost:5174",
                 "http://localhost:8080",
+                "http://localhost:8081",
                 "http://127.0.0.1:3000",
+                "http://127.0.0.1:3001",
                 "http://127.0.0.1:5173",
-            ])
+                "http://127.0.0.1:5174",
+                "http://127.0.0.1:8080",
+                "http://127.0.0.1:8081",
+                # Добавляем Vercel preview URLs для разработки
+                "https://genbi-backend-5.vercel.app",
+            ]
+
         return origins
 
     # ==========================================
-    # 🟢 ДОБАВЛЕНО: Allowed Hosts (На каком домене работает бэкенд)
+    # Allowed Hosts (только для production)
     # ==========================================
     @property
     def ALLOWED_HOSTS(self) -> List[str]:
+        """
+        Список разрешенных хостов
+        Используется только в production
+        """
         return [
-            "localhost",
-            "127.0.0.1",
-            "genbi-backend-5.vercel.app",  # Ваш Vercel домен (без https://)
-            "*.vercel.app" # Можно разрешить все поддомены vercel, если нужно
+            "genbi-backend-5.vercel.app",
+            "yourdomain.com",
+            "www.yourdomain.com",
+            "admin.yourdomain.com",
+            "api.yourdomain.com",
         ]
 
     # Логирование

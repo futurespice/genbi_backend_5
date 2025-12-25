@@ -2,7 +2,7 @@ from fastapi import FastAPI, Request, status
 from fastapi.responses import JSONResponse
 from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.middleware.trustedhost import TrustedHostMiddleware  # 🟢 Импорт Middleware для хостов
+from fastapi.middleware.trustedhost import TrustedHostMiddleware
 from sqlalchemy.exc import SQLAlchemyError
 
 from app.core.config import settings
@@ -22,11 +22,28 @@ app = FastAPI(
 )
 
 # ============================================
-# 🟢 ALLOWED HOSTS MIDDLEWARE (Добавляем первым или перед CORS)
+# 🔥 CORS MIDDLEWARE (ДОЛЖЕН БЫТЬ ПЕРВЫМ!)
 # ============================================
 app.add_middleware(
-    TrustedHostMiddleware,
-    allowed_hosts=settings.ALLOWED_HOSTS
+    CORSMiddleware,
+    allow_origins=settings.CORS_ORIGINS,  # Список разрешенных доменов
+    allow_credentials=True,  # Разрешить cookie и авторизацию
+    allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],  # Явно указываем методы
+    allow_headers=[
+        "Content-Type",
+        "Authorization",
+        "Accept",
+        "Origin",
+        "X-Requested-With",
+        "Access-Control-Request-Method",
+        "Access-Control-Request-Headers",
+    ],
+    expose_headers=[
+        "Content-Type",
+        "Authorization",
+        "X-Total-Count",
+    ],
+    max_age=3600,  # Кеш preflight запросов на 1 час
 )
 
 # ============================================
@@ -53,18 +70,14 @@ async def rate_limit_handler(request: Request, exc):
 
 
 # ============================================
-# CORS MIDDLEWARE
+# ALLOWED HOSTS MIDDLEWARE (ПОСЛЕ CORS!)
 # ============================================
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=settings.CORS_ORIGINS,  # Использует обновленный список из конфига
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
+if settings.ENVIRONMENT == "production":
+    app.add_middleware(
+        TrustedHostMiddleware,
+        allowed_hosts=settings.ALLOWED_HOSTS
+    )
 
-
-# ... (Остальной код без изменений: ERROR HANDLERS, MIDDLEWARE LOGGING и т.д.) ...
 
 # ============================================
 # ERROR HANDLERS
@@ -139,7 +152,6 @@ async def startup_event():
     logger.info(f"📚 Documentation: http://localhost:8000{settings.API_V1_STR}/docs")
     logger.info(f"🌍 Environment: {settings.ENVIRONMENT}")
     logger.info(f"🔒 CORS Origins: {settings.CORS_ORIGINS}")
-    logger.info(f"🏠 Allowed Hosts: {settings.ALLOWED_HOSTS}")  # Можно добавить в лог для проверки
     logger.info("=" * 50)
 
 
@@ -162,7 +174,7 @@ async def root():
     return {
         "message": f"Welcome to {settings.PROJECT_NAME}",
         "docs": f"{settings.API_V1_STR}/docs",
-        "version": "1.0.0"
+        "version": "2.0.0"
     }
 
 
