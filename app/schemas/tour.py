@@ -12,7 +12,7 @@ class TourBase(BaseModel):
     duration: str = Field(..., min_length=2, max_length=100)
     capacity: int = Field(default=50, ge=1, le=1000, description="Вместимость от 1 до 1000")
 
-    # ✅ НОВОЕ: Координаты
+    # Координаты
     latitude: float | None = Field(None, ge=-90, le=90, description="Широта (от -90 до 90)")
     longitude: float | None = Field(None, ge=-180, le=180, description="Долгота (от -180 до 180)")
 
@@ -32,14 +32,13 @@ class TourUpdate(BaseModel):
     capacity: Optional[int] = Field(None, ge=1, le=1000)
     is_active: Optional[bool] = None
 
-    # ✅ НОВОЕ: Координаты можно обновлять
     latitude: Optional[float] = Field(None, ge=-90, le=90)
     longitude: Optional[float] = Field(None, ge=-180, le=180)
 
 
 class TourResponse(TourBase):
     id: int
-    company_id: int
+    company_id: int | None = None  # ✅ ИСПРАВЛЕНО: может быть NULL если компания удалена
     rating: float
     is_active: bool
 

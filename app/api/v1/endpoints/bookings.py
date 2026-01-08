@@ -3,7 +3,7 @@ from fastapi import APIRouter, Depends, HTTPException, status, Request
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
 from sqlalchemy.orm import selectinload
-from sqlalchemy import func
+from sqlalchemy import func, and_
 from datetime import datetime, timezone, timedelta
 
 from app.api import deps
@@ -32,80 +32,96 @@ async def create_booking(
     """
     Создать бронирование
 
+    ✅ ИСПРАВЛЕНО: Race condition устранен через SELECT FOR UPDATE
+
     Проверки:
     - Тур существует и активен
     - Дата не в прошлом
     - Количество участников > 0
     - Нет дубликата
-    - ✅ Достаточно capacity
+    - Достаточно capacity (с блокировкой!)
     """
-    # Проверка тура
-    result = await db.execute(select(Tour).filter(Tour.id == booking_in.tour_id))
-    tour = result.scalars().first()
-    if not tour:
-        raise HTTPException(status_code=404, detail="Tour not found")
 
-    if not tour.is_active:
-        raise HTTPException(status_code=400, detail="Tour is not active")
-
-    # Проверка даты
-    min_booking_time = datetime.now(timezone.utc) + timedelta(hours=settings.MIN_ADVANCE_BOOKING_HOURS)
-    if booking_in.date < min_booking_time:
-        raise HTTPException(
-            status_code=400,
-            detail=f"Bookings must be made at least {settings.MIN_ADVANCE_BOOKING_HOURS} hours in advance"
+    # ============================================
+    # ✅ КРИТИЧЕСКОЕ ИСПРАВЛЕНИЕ: Транзакционная блокировка
+    # ============================================
+    async with db.begin():  # Начинаем транзакцию
+        # Проверка тура с блокировкой строки (FOR UPDATE)
+        result = await db.execute(
+            select(Tour)
+            .filter(Tour.id == booking_in.tour_id)
+            .with_for_update()  # ✅ БЛОКИРОВКА! Другие транзакции подождут
         )
+        tour = result.scalars().first()
 
-    # Проверка участников
-    if booking_in.participants_count < 1:
-        raise HTTPException(
-            status_code=400,
-            detail="Participants count must be at least 1"
+        if not tour:
+            raise HTTPException(status_code=404, detail="Tour not found")
+
+        if not tour.is_active:
+            raise HTTPException(status_code=400, detail="Tour is not active")
+
+        # Проверка даты
+        min_booking_time = datetime.now(timezone.utc) + timedelta(hours=settings.MIN_ADVANCE_BOOKING_HOURS)
+        if booking_in.date < min_booking_time:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Bookings must be made at least {settings.MIN_ADVANCE_BOOKING_HOURS} hours in advance"
+            )
+
+        # Проверка участников
+        if booking_in.participants_count < 1:
+            raise HTTPException(
+                status_code=400,
+                detail="Participants count must be at least 1"
+            )
+
+        # ✅ CAPACITY CHECK С БЛОКИРОВКОЙ - КРИТИЧНО!
+        # Блокируем все бронирования на этот тур и дату
+        existing_bookings = await db.execute(
+            select(func.sum(Booking.participants_count))
+            .where(Booking.tour_id == booking_in.tour_id)
+            .where(Booking.date == booking_in.date)
+            .where(Booking.status.in_([
+                'pending',
+                'confirmed',
+                'paid'
+            ]))
+            .with_for_update()  # ✅ БЛОКИРОВКА! Защита от race condition
         )
+        total_participants = existing_bookings.scalar() or 0
 
-    # ✅ CAPACITY CHECK - КРИТИЧНО!
-    existing_bookings = await db.execute(
-        select(func.sum(Booking.participants_count))
-        .where(Booking.tour_id == booking_in.tour_id)
-        .where(Booking.date == booking_in.date)
-        .where(Booking.status.in_([
-            'pending',
-            'confirmed',
-            'paid'
-        ]))
-    )
-    total_participants = existing_bookings.scalar() or 0
+        available_capacity = tour.capacity - total_participants
 
-    available_capacity = tour.capacity - total_participants
+        if booking_in.participants_count > available_capacity:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Not enough capacity. Available: {available_capacity}, Requested: {booking_in.participants_count}"
+            )
 
-    if booking_in.participants_count > available_capacity:
-        raise HTTPException(
-            status_code=400,
-            detail=f"Not enough capacity. Available: {available_capacity}, Requested: {booking_in.participants_count}"
+        # Проверка дубликата
+        duplicate = await db.execute(
+            select(Booking)
+            .where(Booking.tour_id == booking_in.tour_id)
+            .where(Booking.user_id == current_user.id)
+            .where(Booking.date == booking_in.date)
+            .where(Booking.status != 'cancelled')
         )
+        if duplicate.scalars().first():
+            raise HTTPException(
+                status_code=400,
+                detail="You already have a booking for this tour on this date"
+            )
 
-    # Проверка дубликата
-    duplicate = await db.execute(
-        select(Booking)
-        .where(Booking.tour_id == booking_in.tour_id)
-        .where(Booking.user_id == current_user.id)
-        .where(Booking.date == booking_in.date)
-        .where(Booking.status != 'cancelled')
-    )
-    if duplicate.scalars().first():
-        raise HTTPException(
-            status_code=400,
-            detail="You already have a booking for this tour on this date"
+        # Создание бронирования
+        booking = Booking(
+            **booking_in.model_dump(),
+            user_id=current_user.id,
+            status='pending'
         )
+        db.add(booking)
+        # ✅ commit произойдет автоматически при выходе из with db.begin()
 
-    # Создание бронирования
-    booking = Booking(
-        **booking_in.model_dump(),
-        user_id=current_user.id,
-        status='pending'
-    )
-    db.add(booking)
-    await db.commit()
+    # Обновляем объект после коммита
     await db.refresh(booking)
 
     log_booking_action(
@@ -135,12 +151,10 @@ async def read_bookings(
     count_query = select(Booking.id)
 
     if current_user.role == 'client':
-        # Клиент видит только свои
         query = query.filter(Booking.user_id == current_user.id)
         count_query = count_query.filter(Booking.user_id == current_user.id)
 
     elif current_user.role == 'company':
-        # Компания видит бронирования своих туров
         query = (
             query
             .options(selectinload(Booking.tour).selectinload(Tour.company))
@@ -180,12 +194,6 @@ async def read_booking(
 ) -> Any:
     """
     Получить детальную информацию о бронировании
-
-    ✅ НОВОЕ: Возвращает расширенную информацию:
-    - Информацию о бронировании
-    - Полную информацию о туре
-    - Информацию о компании
-    - Информацию о пользователе (только для админа/компании)
     """
     query = (
         select(Booking)
@@ -203,7 +211,7 @@ async def read_booking(
 
     # Проверка прав
     is_owner = booking.user_id == current_user.id
-    is_company_owner = booking.tour.company.owner_id == current_user.id
+    is_company_owner = booking.tour.company and booking.tour.company.owner_id == current_user.id
     is_admin = current_user.role == 'admin'
 
     if not (is_owner or is_company_owner or is_admin):
@@ -222,7 +230,7 @@ async def read_booking(
         "status": booking.status,
         "created_at": booking.created_at,
         "tour": booking.tour,
-        "company": booking.tour.company,
+        "company": booking.tour.company if booking.tour.company else None,
     }
 
     # Информация о пользователе - только для админа или владельца компании
@@ -268,7 +276,7 @@ async def update_booking_status(
 
     # Проверка прав
     is_admin = current_user.role == 'admin'
-    is_company_owner = booking.tour.company.owner_id == current_user.id
+    is_company_owner = booking.tour.company and booking.tour.company.owner_id == current_user.id
     is_booking_owner = booking.user_id == current_user.id
 
     # Клиент может только отменить

@@ -13,11 +13,10 @@ class ReviewCreate(ReviewBase):
 
 class ReviewResponse(BaseModel):
     """
-    ✅ ИСПРАВЛЕНО: Убрали наследование от ReviewBase
-    Теперь используем реальные поля модели: tour_id и company_id
+    ✅ ИСПРАВЛЕНО: author_id может быть NULL если пользователь удален
     """
     id: int
-    author_id: int
+    author_id: int | None = None  # ✅ ИСПРАВЛЕНО
     target_type: Literal['tour', 'company']
     tour_id: int | None = None
     company_id: int | None = None

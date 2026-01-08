@@ -25,27 +25,19 @@ class CompanyUpdate(BaseModel):
 
 class CompanyResponse(CompanyBase):
     id: int
-    owner_id: int
+    owner_id: int | None = None  # ✅ ИСПРАВЛЕНО: может быть NULL если владелец удален
 
     class Config:
         from_attributes = True
 
 
-# ✅ НОВОЕ: Компания с турами для аккордиона
+# Компания с турами для аккордиона
 class CompanyWithToursResponse(CompanyResponse):
     """
     Компания с турами для аккордиона
-
-    При GET /companies можно запросить с параметром ?include_tours=true
-    Тогда будет возвращаться список туров компании
-
-    Использование на фронтенде:
-    - При загрузке списка компаний получаем только базовую информацию
-    - При клике на компанию (раскрытие аккордиона) подгружаем туры
-    - Или сразу загружаем все с include_tours=true
     """
     tours: List['TourResponse'] = []
-    tours_count: int = 0  # Количество туров для badge
+    tours_count: int = 0
 
 
 # Для избежания circular imports

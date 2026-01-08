@@ -2,7 +2,6 @@ from fastapi import FastAPI, Request, status
 from fastapi.responses import JSONResponse
 from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.middleware.trustedhost import TrustedHostMiddleware
 from sqlalchemy.exc import SQLAlchemyError
 
 from app.core.config import settings
@@ -22,13 +21,13 @@ app = FastAPI(
 )
 
 # ============================================
-# 🔥 CORS MIDDLEWARE (ДОЛЖЕН БЫТЬ ПЕРВЫМ!)
+# CORS MIDDLEWARE (ДОЛЖЕН БЫТЬ ПЕРВЫМ!)
 # ============================================
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=settings.CORS_ORIGINS,  # Список разрешенных доменов
-    allow_credentials=True,  # Разрешить cookie и авторизацию
-    allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],  # Явно указываем методы
+    allow_origins=settings.CORS_ORIGINS,
+    allow_credentials=True,
+    allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
     allow_headers=[
         "Content-Type",
         "Authorization",
@@ -43,21 +42,17 @@ app.add_middleware(
         "Authorization",
         "X-Total-Count",
     ],
-    max_age=3600,  # Кеш preflight запросов на 1 час
+    max_age=3600,
 )
 
 # ============================================
 # RATE LIMITING
 # ============================================
 
-# Добавляем limiter в app state
 app.state.limiter = limiter
-
-# Middleware для логирования rate limit нарушений
 app.add_middleware(RateLimitMiddleware)
 
 
-# Exception handler для rate limit
 @app.exception_handler(429)
 async def rate_limit_handler(request: Request, exc):
     logger.warning(f"Rate limit exceeded for {request.client.host} on {request.url.path}")
@@ -72,11 +67,7 @@ async def rate_limit_handler(request: Request, exc):
 # ============================================
 # ALLOWED HOSTS MIDDLEWARE (ПОСЛЕ CORS!)
 # ============================================
-if settings.ENVIRONMENT == "production":
-    app.add_middleware(
-        TrustedHostMiddleware,
-        allowed_hosts=settings.ALLOWED_HOSTS
-    )
+
 
 
 # ============================================
@@ -107,7 +98,9 @@ async def validation_exception_handler(request: Request, exc: RequestValidationE
 @app.exception_handler(SQLAlchemyError)
 async def sqlalchemy_exception_handler(request: Request, exc: SQLAlchemyError):
     """Обработка ошибок базы данных"""
-    logger.error(f"Database error on {request.url.path}: {str(exc)}")
+    # ✅ ИСПРАВЛЕНО: используем repr вместо str для избежания проблем с {}
+    error_msg = repr(exc)
+    logger.error(f"Database error on {request.url.path}: {error_msg}")
     return JSONResponse(
         status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
         content={
@@ -119,7 +112,9 @@ async def sqlalchemy_exception_handler(request: Request, exc: SQLAlchemyError):
 @app.exception_handler(Exception)
 async def general_exception_handler(request: Request, exc: Exception):
     """Обработка всех остальных ошибок"""
-    logger.error(f"Unexpected error on {request.url.path}: {str(exc)}", exc_info=True)
+    # ✅ ИСПРАВЛЕНО: используем repr вместо str для избежания KeyError с {}
+    error_msg = repr(exc)
+    logger.error(f"Unexpected error on {request.url.path}: {error_msg}")
     return JSONResponse(
         status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
         content={
@@ -174,7 +169,7 @@ async def root():
     return {
         "message": f"Welcome to {settings.PROJECT_NAME}",
         "docs": f"{settings.API_V1_STR}/docs",
-        "version": "2.0.0"
+        "version": "2.1.0"  # ✅ ВЕРСИЯ ОБНОВЛЕНА
     }
 
 

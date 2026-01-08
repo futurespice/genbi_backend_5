@@ -27,10 +27,7 @@ async def create_company(
 
     ⚠️ ВАЖНО: Этот эндпоинт НЕ ДОЛЖЕН использоваться напрямую!
     Компании создаются автоматически при одобрении заявки через /applications
-
-    Только пользователи с ролью COMPANY или ADMIN могут создавать компании
     """
-
     # Проверка уникальности названия
     result = await db.execute(select(Company).filter(Company.name == company_in.name))
     if result.scalars().first():
@@ -75,18 +72,7 @@ async def get_companies(
     """
     Получить список компаний с пагинацией
 
-    ✅ НОВОЕ: Поддержка аккордиона с турами
-
-    Параметры:
-    - page: Номер страницы
-    - per_page: Количество элементов на странице
-    - search: Поиск по названию
-    - include_tours: Включить туры в ответ (для аккордиона)
-
-    Примеры использования:
-    1. Базовый список: GET /companies
-    2. С турами (аккордион): GET /companies?include_tours=true
-    3. Поиск с турами: GET /companies?search=Adventure&include_tours=true
+    ✅ ИСПРАВЛЕНО: N+1 problem устранен через eager loading
     """
 
     pagination = PaginationParams(page=page, per_page=per_page)
@@ -95,7 +81,7 @@ async def get_companies(
     query = select(Company)
     count_query = select(func.count(Company.id))
 
-    # Если нужны туры - добавляем eager loading
+    # ✅ КРИТИЧНО: Eager loading туров ТОЛЬКО если запрошено
     if include_tours:
         query = query.options(selectinload(Company.tours))
 
@@ -114,12 +100,11 @@ async def get_companies(
     result = await db.execute(query)
     companies = result.scalars().all()
 
-    # Формируем ответ
+    # ✅ ИСПРАВЛЕНО: Формируем ответ БЕЗ доступа к lazy loaded атрибутам
     if include_tours:
-        # С турами для аккордиона
         items = []
         for company in companies:
-            # Подсчитываем активные туры
+            # Фильтруем активные туры В ПАМЯТИ (туры уже загружены через selectinload)
             active_tours = [tour for tour in company.tours if tour.is_active]
             items.append({
                 "id": company.id,
@@ -132,8 +117,20 @@ async def get_companies(
                 "tours_count": len(active_tours)
             })
     else:
-        # Без туров (базовый список)
-        items = companies
+        # ✅ Без туров - просто возвращаем компании
+        items = [
+            {
+                "id": c.id,
+                "name": c.name,
+                "address": c.address,
+                "work_hours": c.work_hours,
+                "website": c.website,
+                "owner_id": c.owner_id,
+                "tours": [],
+                "tours_count": 0
+            }
+            for c in companies
+        ]
 
     return PaginatedResponse.create(
         items=items,
@@ -152,7 +149,7 @@ async def get_my_company(
     """
     Получить свою компанию
 
-    По умолчанию включает туры (include_tours=true)
+    ✅ ИСПРАВЛЕНО: Eager loading для избежания N+1
     """
     query = select(Company).filter(Company.owner_id == current_user.id)
 
@@ -182,7 +179,16 @@ async def get_my_company(
             "tours_count": len(active_tours)
         }
 
-    return company
+    return {
+        "id": company.id,
+        "name": company.name,
+        "address": company.address,
+        "work_hours": company.work_hours,
+        "website": company.website,
+        "owner_id": company.owner_id,
+        "tours": [],
+        "tours_count": 0
+    }
 
 
 @router.get("/{company_id}", response_model=CompanyWithToursResponse)
@@ -194,7 +200,7 @@ async def get_company(
     """
     Получить компанию по ID
 
-    По умолчанию включает туры (include_tours=true)
+    ✅ ИСПРАВЛЕНО: Eager loading для избежания N+1
     """
     query = select(Company).filter(Company.id == company_id)
 
@@ -224,7 +230,16 @@ async def get_company(
             "tours_count": len(active_tours)
         }
 
-    return company
+    return {
+        "id": company.id,
+        "name": company.name,
+        "address": company.address,
+        "work_hours": company.work_hours,
+        "website": company.website,
+        "owner_id": company.owner_id,
+        "tours": [],
+        "tours_count": 0
+    }
 
 
 @router.patch("/{company_id}", response_model=CompanyResponse)
@@ -236,8 +251,6 @@ async def update_company(
 ) -> Any:
     """
     Обновить компанию
-
-    Только владелец или админ могут обновлять компанию
     """
     result = await db.execute(select(Company).filter(Company.id == company_id))
     company = result.scalars().first()
@@ -289,8 +302,6 @@ async def delete_company(
 ) -> None:
     """
     Удалить компанию
-
-    Только владелец или админ могут удалить компанию
     """
     result = await db.execute(select(Company).filter(Company.id == company_id))
     company = result.scalars().first()
